@@ -1,3 +1,23 @@
+(*------------------------------------------------------------------------------
+(- StreamCytonData
+(-
+(- Created By....: Alessandro "Ollie" D'Amico 27 Jun 2019
+(- Last Updated..: Ollie 1 Jul 2019
+(- Uploaded to...: https://github.com/ollie-d/SpoofCyton
+(-
+(- This program is designed to send emulate the sending of Cyton packets to the
+(- server spawned by moment.
+(- Currently everything is operational, however there is a major flaw.
+(- The method used to multithread the reading of the text files into memo boxes
+(- Works, but causes two distinct jumps on execution and termination of the
+(- child thread. Simple attemps to ammeliorate this such as lowering the child
+(- priority to the lowest possible (idle), and making sure ther thread was only
+(- created once made no difference.
+(- I hypothesize a rework is necessary, where the files are read in but appended
+(- to a single memobox in paralell rather than having the stream thread switch
+(- which box it's reading from.
+(-----------------------------------------------------------------------------*)
+
 unit StreamCytonData;
 //http://delphiprogrammingdiary.blogspot.com/2018/02/delphi-ioutils-accessing-and-changing.html
 //https://stackoverflow.com/questions/988733/how-to-delete-files-matching-pattern-within-a-directory
@@ -63,7 +83,7 @@ var
   ActiveIndex: Integer;
   NumFiles: Integer;
   Dir: String; // Where files are located
-  interval: Integer = 500; // every 500 lines updates progress bar
+  interval: Integer; // every 500 lines updates progress bar
   should_terminate: Boolean = False;
   Client: TIdTCPClient;
 
@@ -75,7 +95,7 @@ implementation
 procedure StreamThread.DoProgress;
 begin
   ActiveBar.Position := prog;
-  //ActiveBar.Refresh;
+  ActiveBar.Refresh;
 end;
 
 procedure StreamThread.SetMemo(mm: TMemo; bar: TProgressBar; index: Integer);
@@ -102,6 +122,7 @@ begin
   child := MemoThread.Create(True);
   child.SetMemo(Form2.Memo2, Form2.ProgressBar2);
   child.SetFileName(Form2.mmDataFiles.Lines[1]); // 2nd file
+  child.Priority := tpIdle;//tpLowest;
   child.Execute;
 
   QueryPerformanceCounter(InitStart);
@@ -112,17 +133,19 @@ begin
     // Skip first file (weird edge case)
     if j > 1 then
     begin
+      // Handle termination
+      if should_terminate then
+        break;
+
       // Switch focus and populate the other memo
       if ActiveIndex = 1 then
       begin
         SetMemo(Form2.Memo2, Form2.ProgressBar2, 2);
-        child := MemoThread.Create(True);
         child.SetMemo(Form2.Memo1, Form2.ProgressBar1);
       end
       else
       begin
         SetMemo(Form2.Memo1, Form2.ProgressBar1, 1);
-        child := MemoThread.Create(True);
         child.SetMemo(Form2.Memo2, Form2.ProgressBar2);
       end;
 
@@ -135,7 +158,7 @@ begin
     begin
       // Determine if we should terminate
       if should_terminate then
-        exit;
+        break;
 
       // Send Data to Moment Here
       Client.IOHandler.WriteLn(ActiveMemo.Lines[i]);
@@ -157,12 +180,15 @@ begin
     end;
   end;
 
-  // Debug
+  // Destroy MemoThread child
+  child.Terminate;
 
+  // Debug
+  (*
   QueryPerformanceCounter(Stop);
   ShowMessage('Expected Time (seconds): ' + FloatToStr(ActiveMemo.Lines.Count * 0.004));
   ShowMessage('Actual Time (seconds): ' + FloatToStr((Stop - InitStart) / Frequency));
-
+  *)
 end;
 
 { MemoThread }
@@ -179,11 +205,8 @@ end;
 
 procedure MemoThread.Execute;
 begin
-  // Do we freeonterminate or no?
-  // Not sure if it's cheaper to keep the thread alive or 
-  // If it's safer to let it die and spawn a new one
   // Read file directly to memo
-  FreeOnTerminate := True;
+  FreeOnTerminate := False; // Stream thread will close it
   memo.Clear;
   memo.Lines.LoadFromFile(fileName);
   bar.Max := memo.Lines.Count;
@@ -261,7 +284,7 @@ begin
   // Connect to localhost
   Client.Host := '127.0.0.1';
   Client.port := 1024;
-  Client.Connect;//Activates the client socket
+  Client.Connect;
 
   Sleep(200);
   if Client.Connected then
@@ -278,9 +301,10 @@ begin
     btnStart.Caption := 'Start';
     btnSelectFolder.Enabled := True;
     btnStart.Refresh;
-    ShowMessage('We outta here');
-    // Add code to stop things from happening
-    exit;
+    Client.Disconnect;
+    Client.Destroy;
+    ShowMessage('Application Terminated');
+    Application.Terminate();
   end
   else
   begin

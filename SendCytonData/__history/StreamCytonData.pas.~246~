@@ -112,36 +112,42 @@ begin
     // Skip first file (weird edge case)
     if j > 1 then
     begin
+      // Handle termination
+      if should_terminate then
+        break;
+
       // Switch focus and populate the other memo
       if ActiveIndex = 1 then
       begin
         SetMemo(Form2.Memo2, Form2.ProgressBar2, 2);
-        child := MemoThread.Create(True);
+        //child := MemoThread.Create(True);
         child.SetMemo(Form2.Memo1, Form2.ProgressBar1);
       end
       else
       begin
         SetMemo(Form2.Memo1, Form2.ProgressBar1, 1);
-        child := MemoThread.Create(True);
+        //child := MemoThread.Create(True);
         child.SetMemo(Form2.Memo2, Form2.ProgressBar2);
       end;
 
       // Set child fileName to next file, then execute
       child.SetFileName(Form2.mmDataFiles.Lines[j]);
+      child.Priority := tpLowest;
       child.Execute;
     end;
 
-    for i := ActiveBar.Max downto 0 do
+    for i := 0 to ActiveMemo.Lines.Count do
     begin
       // Determine if we should terminate
       if should_terminate then
-        exit;
+        break;
 
       // Send Data to Moment Here
+      Client.IOHandler.WriteLn(ActiveMemo.Lines[i]);
 
       // Update progress bar when needed
-      prog := i;
-      if i mod interval = 0 then Queue(DoProgress);
+      prog := ActiveBar.Max - i;
+      //if i mod interval = 0 then Queue(DoProgress);
 
       // Wait dt (in our case 4ms)
       QueryPerformanceCounter(Start);
@@ -156,8 +162,10 @@ begin
     end;
   end;
 
-  // Debug
+  // Destroy MemoThread child
+  child.Destroy;
 
+  // Debug
   QueryPerformanceCounter(Stop);
   ShowMessage('Expected Time (seconds): ' + FloatToStr(ActiveMemo.Lines.Count * 0.004));
   ShowMessage('Actual Time (seconds): ' + FloatToStr((Stop - InitStart) / Frequency));
@@ -182,12 +190,12 @@ begin
   // Not sure if it's cheaper to keep the thread alive or 
   // If it's safer to let it die and spawn a new one
   // Read file directly to memo
-  FreeOnTerminate := True;
+  FreeOnTerminate := False; // Stream thread will close it
   memo.Clear;
   memo.Lines.LoadFromFile(fileName);
   bar.Max := memo.Lines.Count;
-  bar.Position := bar.Max;
-  bar.Refresh;
+  //bar.Position := bar.Max;
+  //bar.Refresh;
   Application.ProcessMessages;
 end;
 
@@ -252,8 +260,7 @@ end;
 
 procedure TForm2.btnServerClick(Sender: TObject);
 begin
-  // Connect to moment server
-  // All code taken from moment_client
+  // Connect to moment server; code adapted from moment_client
 
   // Create client
   Client := TIdTCPClient.Create(Application);
@@ -263,10 +270,9 @@ begin
   Client.port := 1024;
   Client.Connect;//Activates the client socket
 
-  Sleep(1000);
+  Sleep(200);
   if Client.Connected then
-    ShowMessage('The server hasa connecta, suck-sessa-fully');
-
+    btnSelectFolder.Enabled := True;
 end;
 
 procedure TForm2.btnStartClick(Sender: TObject);
