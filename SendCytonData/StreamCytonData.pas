@@ -133,7 +133,7 @@ begin
   LoadData;
 
   // Send data to server
-  for i := 0 to Form2.Memo1.Lines.Count do
+  for i := 0 to (Form2.Memo1.Lines.Count - 1) do
   begin
     if should_terminate then
       break;
@@ -219,7 +219,7 @@ begin
       child.Execute;
     end;
 
-    for i := 0 to ActiveMemo.Lines.Count do
+    for i := 0 to (ActiveMemo.Lines.Count - 1) do
     begin
       // Determine if we should terminate
       if should_terminate then
