@@ -110,7 +110,7 @@ begin
   // We will read each file into Memo1
   Form2.ProgressBar1.Max := Form2.mmDataFiles.Lines.Count * 6000; //rough
   Form2.ProgressBar1.Position := 0;
-  for i := 1 to (Form2.mmDataFiles.Lines.Count-1) do
+  for i := 1 to (Form2.mmDataFiles.Lines.Count - 1) do
   begin
     Form2.Memo2.Clear;
     Form2.Memo2.Lines.LoadFromFile(Form2.mmDataFiles.Lines[i]);
@@ -193,7 +193,7 @@ begin
   QueryPerformanceCounter(InitStart);
   interval := 500;
 
-  for j := 1 to numFiles do
+  for j := 1 to (numFiles - 1) do
   begin
     // Skip first file (weird edge case)
     if j > 1 then

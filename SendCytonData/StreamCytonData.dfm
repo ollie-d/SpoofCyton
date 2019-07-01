@@ -113,7 +113,7 @@ object Form2: TForm2
     Width = 65
     Height = 63
     Caption = 'Multithread'
-    ItemIndex = 1
+    ItemIndex = 0
     Items.Strings = (
       'On'
       'Off')
