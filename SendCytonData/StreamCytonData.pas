@@ -40,6 +40,7 @@ type
     mmDataFiles: TMemo;
     Times1: TMemo;
     btnServer: TButton;
+    rgMulti: TRadioGroup;
     procedure btnStartClick(Sender: TObject);
     procedure btnSelectFolderClick(Sender: TObject);
     procedure btnServerClick(Sender: TObject);
@@ -74,6 +75,15 @@ type
     test, prog: Integer;
   end;
 
+type
+  BruteThread = class(TThread)
+  protected
+    procedure Execute; override;
+    procedure LoadData;
+  private
+    Start, Stop, Frequency: Int64;
+    Elapsed: Single;
+  end;
 
 var
   fs, dt: Single;
@@ -90,6 +100,61 @@ var
 implementation
 
 {$R *.dfm}
+
+{ BruteThread }
+procedure BruteThread.LoadData;
+var
+  i, j: Integer;
+begin
+  // This assumes first file has already been processed to Memo1
+  // We will read each file into Memo1
+  Form2.ProgressBar1.Max := Form2.mmDataFiles.Lines.Count * 6000; //rough
+  Form2.ProgressBar1.Position := 0;
+  for i := 1 to (Form2.mmDataFiles.Lines.Count-1) do
+  begin
+    Form2.Memo2.Clear;
+    Form2.Memo2.Lines.LoadFromFile(Form2.mmDataFiles.Lines[i]);
+    Form2.Memo1.Lines.AddStrings(Form2.Memo2.Lines);
+    Form2.ProgressBar1.Position := Form2.Memo1.Lines.Count;
+    Form2.ProgressBar1.Refresh;
+  end;
+  Form2.ProgressBar1.Position := Form2.ProgressBar1.Max;
+  Form2.ProgressBar2.Position := Form2.ProgressBar2.Max;
+  Form2.ProgressBar1.Refresh;
+  Form2.ProgressBar2.Refresh;
+end;
+
+procedure BruteThread.Execute;
+var
+  i: Integer;
+begin
+  FreeOnTerminate := True;
+  QueryPerformanceFrequency(Frequency);
+  LoadData;
+
+  // Send data to server
+  for i := 0 to Form2.Memo1.Lines.Count do
+  begin
+    if should_terminate then
+      break;
+    // Send data
+    Client.IOHandler.WriteLn(Form2.memo1.Lines[i]);
+
+    // Wait dt
+    QueryPerformanceCounter(Start);
+    QueryPerformanceCounter(Stop);
+    Elapsed := 0.0;
+    while Elapsed < dt do
+    begin
+      QueryPerformanceCounter(Stop);
+      Elapsed := (Stop - Start) / Frequency;
+    end;
+    Application.ProcessMessages; // Allows for stopping
+  end;
+
+  // Free memory
+  Form2.Memo1.Clear;
+end;
 
 { StreamThread }
 procedure StreamThread.DoProgress;
@@ -257,7 +322,6 @@ end;
 
 procedure TForm2.btnSelectFolderClick(Sender: TObject);
 begin
-  btnStart.Enabled := True;
   with TFileOpenDialog.Create(nil) do
   try
     Options := [fdoPickFolders];
@@ -265,6 +329,8 @@ begin
       Dir := FileName;
   finally
     Free;
+
+  btnStart.Enabled := True;
   end;
 
   // List all data files and count number
@@ -294,6 +360,7 @@ end;
 procedure TForm2.btnStartClick(Sender: TObject);
 var
   Thread: StreamThread;
+  Brute: BruteThread;
 begin
   if btnStart.Caption = 'Stop' then
   begin
@@ -308,21 +375,29 @@ begin
   end
   else
   begin
+    fs := 250.0; // Cyton default
+    dt := 1.0 / fs; // 0.004s (4ms)
     btnStart.Caption := 'Stop';
     btnStart.Refresh;
     btnSelectFolder.Enabled := False;
+    btnServer.Enabled := False;
+    rgMulti.Enabled := False;
+    case rgMulti.ItemIndex of
+      0: // Multithread
+      begin
+        // Create thread (suspended)
+        Thread := StreamThread.Create(True);
+        Thread.Priority := tpTimeCritical;
+
+        // Start our thread
+        Thread.Execute;
+      end;
+      1: // Brutethread
+      begin
+        Brute := BruteThread.Create(False);
+      end;
+    end;
   end;
-  
-  // Set fs to Cyton default and calculate dt
-  fs := 250.0; // Cyton default
-  dt := 1.0 / fs; // 0.004s (4ms)
-
-  // Create thread (suspended)
-  Thread := StreamThread.Create(True);
-  Thread.Priority := tpTimeCritical;
-
-  // Start our thread
-  Thread.Execute;
 end;
 
 end.

@@ -1,3 +1,23 @@
+(*------------------------------------------------------------------------------
+(- StreamCytonData
+(-
+(- Created By....: Alessandro "Ollie" D'Amico 27 Jun 2019
+(- Last Updated..: Ollie 1 Jul 2019
+(- Uploaded to...: https://github.com/ollie-d/SpoofCyton
+(-
+(- This program is designed to send emulate the sending of Cyton packets to the
+(- server spawned by moment.
+(- Currently everything is operational, however there is a major flaw.
+(- The method used to multithread the reading of the text files into memo boxes
+(- Works, but causes two distinct jumps on execution and termination of the
+(- child thread. Simple attemps to ammeliorate this such as lowering the child
+(- priority to the lowest possible (idle), and making sure ther thread was only
+(- created once made no difference.
+(- I hypothesize a rework is necessary, where the files are read in but appended
+(- to a single memobox in paralell rather than having the stream thread switch
+(- which box it's reading from.
+(-----------------------------------------------------------------------------*)
+
 unit StreamCytonData;
 //http://delphiprogrammingdiary.blogspot.com/2018/02/delphi-ioutils-accessing-and-changing.html
 //https://stackoverflow.com/questions/988733/how-to-delete-files-matching-pattern-within-a-directory
@@ -20,9 +40,11 @@ type
     mmDataFiles: TMemo;
     Times1: TMemo;
     btnServer: TButton;
+    rgMulti: TRadioGroup;
     procedure btnStartClick(Sender: TObject);
     procedure btnSelectFolderClick(Sender: TObject);
     procedure btnServerClick(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
   private
     { Private declarations }
   public
@@ -54,6 +76,15 @@ type
     test, prog: Integer;
   end;
 
+type
+  BruteThread = class(TThread)
+  protected
+    procedure Execute; override;
+    procedure LoadData;
+  private
+    Start, Stop, Frequency: Int64;
+    Elapsed: Single;
+  end;
 
 var
   fs, dt: Single;
@@ -63,13 +94,65 @@ var
   ActiveIndex: Integer;
   NumFiles: Integer;
   Dir: String; // Where files are located
-  interval: Integer = 500; // every 500 lines updates progress bar
+  interval: Integer; // every 500 lines updates progress bar
   should_terminate: Boolean = False;
   Client: TIdTCPClient;
 
 implementation
 
 {$R *.dfm}
+
+{ BruteThread }
+procedure BruteThread.LoadData;
+var
+  i, j: Integer;
+begin
+  // This assumes first file has already been processed to Memo1
+  // We will read each file into Memo1
+  Form2.ProgressBar1.Max := Form2.mmDataFiles.Lines.Count * 6000; //rough
+  Form2.ProgressBar1.Position := 0;
+  for i := 1 to Form2.mmDataFiles.Lines.Count do
+  begin
+    Form2.Memo2.Clear;
+    Form2.Memo2.Lines.LoadFromFile(Form2.mmDataFiles.Lines[i]);
+    Form2.Memo2.Lines.AddStrings(Form2.Memo2.Lines);
+    Form2.ProgressBar1.Position := Form2.ProgressBar1.Position + 5000;
+    Form2.ProgressBar1.Refresh;
+  end;
+  Form2.ProgressBar1.Position := Form2.ProgressBar1.Max;
+  Form2.ProgressBar1.Refresh;
+end;
+
+procedure BruteThread.Execute;
+var
+  i: Integer;
+begin
+  FreeOnTerminate := True;
+  LoadData;
+
+  // Send data to server
+  for i := 0 to Form2.Memo1.Lines.Count do
+  begin
+    if should_terminate then
+      break;
+    // Send data
+    Client.IOHandler.WriteLn(Form2.memo1.Lines[i]);
+
+    // Wait dt
+    QueryPerformanceCounter(Start);
+    QueryPerformanceCounter(Stop);
+    Elapsed := 0.0;
+    while Elapsed < dt do
+    begin
+      QueryPerformanceCounter(Stop);
+      Elapsed := (Stop - Start) / Frequency;
+    end;
+    Application.ProcessMessages; // Allows for stopping
+  end;
+
+  // Free memory
+  Form2.Memo1.Clear;
+end;
 
 { StreamThread }
 procedure StreamThread.DoProgress;
@@ -121,13 +204,11 @@ begin
       if ActiveIndex = 1 then
       begin
         SetMemo(Form2.Memo2, Form2.ProgressBar2, 2);
-        //child := MemoThread.Create(True);
         child.SetMemo(Form2.Memo1, Form2.ProgressBar1);
       end
       else
       begin
         SetMemo(Form2.Memo1, Form2.ProgressBar1, 1);
-        //child := MemoThread.Create(True);
         child.SetMemo(Form2.Memo2, Form2.ProgressBar2);
       end;
 
@@ -187,9 +268,6 @@ end;
 
 procedure MemoThread.Execute;
 begin
-  // Do we freeonterminate or no?
-  // Not sure if it's cheaper to keep the thread alive or 
-  // If it's safer to let it die and spawn a new one
   // Read file directly to memo
   FreeOnTerminate := False; // Stream thread will close it
   memo.Clear;
@@ -269,7 +347,7 @@ begin
   // Connect to localhost
   Client.Host := '127.0.0.1';
   Client.port := 1024;
-  Client.Connect;//Activates the client socket
+  Client.Connect;
 
   Sleep(200);
   if Client.Connected then
@@ -279,6 +357,7 @@ end;
 procedure TForm2.btnStartClick(Sender: TObject);
 var
   Thread: StreamThread;
+  Brute: BruteThread;
 begin
   if btnStart.Caption = 'Stop' then
   begin
@@ -289,26 +368,33 @@ begin
     Client.Disconnect;
     Client.Destroy;
     ShowMessage('Application Terminated');
-    // Add code to stop things from happening
     Application.Terminate();
   end
   else
   begin
+    fs := 250.0; // Cyton default
+    dt := 1.0 / fs; // 0.004s (4ms)
     btnStart.Caption := 'Stop';
     btnStart.Refresh;
     btnSelectFolder.Enabled := False;
+    btnServer.Enabled := False;
+    rgMulti.Enabled := False;
+    case rgMulti.ItemIndex of
+      0: // Multithread
+      begin
+        // Create thread (suspended)
+        Thread := StreamThread.Create(True);
+        Thread.Priority := tpTimeCritical;
+
+        // Start our thread
+        Thread.Execute;
+      end;
+      1: // Brutethread
+      begin
+        Brute := BruteThread.Create(False);
+      end;
+    end;
   end;
-  
-  // Set fs to Cyton default and calculate dt
-  fs := 250.0; // Cyton default
-  dt := 1.0 / fs; // 0.004s (4ms)
-
-  // Create thread (suspended)
-  Thread := StreamThread.Create(True);
-  Thread.Priority := tpTimeCritical;
-
-  // Start our thread
-  Thread.Execute;
 end;
 
 end.

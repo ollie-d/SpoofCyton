@@ -71,9 +71,9 @@ object Form2: TForm2
     OnClick = btnSelectFolderClick
   end
   object mmDataFiles: TMemo
-    Left = 96
+    Left = 167
     Top = 223
-    Width = 282
+    Width = 211
     Height = 61
     Font.Charset = DEFAULT_CHARSET
     Font.Color = clWindowText
@@ -106,5 +106,17 @@ object Form2: TForm2
     Caption = 'Connect to Server'
     TabOrder = 0
     OnClick = btnServerClick
+  end
+  object rgMulti: TRadioGroup
+    Left = 96
+    Top = 223
+    Width = 65
+    Height = 63
+    Caption = 'Multithread'
+    ItemIndex = 1
+    Items.Strings = (
+      'On'
+      'Off')
+    TabOrder = 9
   end
 end
