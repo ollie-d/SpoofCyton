@@ -304,7 +304,7 @@ var
 begin
   File_ := TStringList.Create;
   File_.LoadFromFile(FileName);
-  for counter := 0 to File_.Count-1 do
+  for counter := 0 to File_.Count - 1 do
   begin
     line := File_.Strings[counter];
     if line[1] = '1' then
@@ -313,7 +313,7 @@ begin
 
   // Add lines to Memo1 (update bar1 too)
   Form2.ProgressBar1.Max := File_.Count;
-  for counter := counter to File_.Count-1 do
+  for counter := counter to File_.Count - 1 do
   begin
     Form2.Memo1.Lines.Add(File_.Strings[counter]);
     Form2.ProgressBar1.Position := counter;
